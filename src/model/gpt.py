@@ -44,6 +44,7 @@ class CausalSelfAttention(nn.Module):
         attn_bias: bool,
         attn_dropout: float,
         resid_dropout: float,
+        use_xsa: bool = False,
     ):
         super().__init__()
 
@@ -59,6 +60,8 @@ class CausalSelfAttention(nn.Module):
 
         self.attn_dropout = attn_dropout
         self.resid_dropout = nn.Dropout(resid_dropout)
+
+        self.use_xsa = use_xsa
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -94,6 +97,10 @@ class CausalSelfAttention(nn.Module):
             is_causal=True,
         )
 
+        if self.use_xsa:
+            v_n = torch.nn.functional.normalize(v, dim=-1)
+            out = out - (out * v_n).sum(dim=-1, keepdim=True) * v_n
+
         out = out.transpose(1, 2).contiguous().view(B, S, H)
 
         out = self.resid_dropout(self.out_proj(out))
@@ -112,6 +119,7 @@ class GPTBlock(nn.Module):
         resid_dropout: float,
         mlp_expansion_factor: int,
         mlp_dropout: float,
+        use_xsa: bool = False,
     ):
         super().__init__()
 
@@ -119,7 +127,12 @@ class GPTBlock(nn.Module):
 
         self.ln1 = nn.LayerNorm(hidden_dim, bias=ln_bias)
         self.attn = CausalSelfAttention(
-            hidden_dim, num_heads, attn_bias, attn_dropout, resid_dropout
+            hidden_dim,
+            num_heads,
+            attn_bias,
+            attn_dropout,
+            resid_dropout,
+            use_xsa=use_xsa,
         )
         self.ln2 = nn.LayerNorm(hidden_dim, bias=ln_bias)
         self.mlp = MLP(hidden_dim, mlp_expansion_factor, mlp_dropout)
@@ -157,6 +170,7 @@ class GPT(nn.Module):
         mlp_expansion_factor: int,
         mlp_dropout: float,
         token_emb_ln: bool = False,
+        use_xsa: bool = False,
     ):
         super().__init__()
 
@@ -181,6 +195,7 @@ class GPT(nn.Module):
                             resid_dropout,
                             mlp_expansion_factor,
                             mlp_dropout,
+                            use_xsa=use_xsa,
                         )
                         for _ in range(n_layers)
                     ]
