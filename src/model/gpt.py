@@ -156,6 +156,7 @@ class GPT(nn.Module):
         resid_dropout: float,
         mlp_expansion_factor: int,
         mlp_dropout: float,
+        token_emb_ln: bool = False,
     ):
         super().__init__()
 
@@ -187,6 +188,11 @@ class GPT(nn.Module):
                 final_ln=nn.LayerNorm(self.hidden_dim, bias=ln_bias),
             )
         )
+
+        if token_emb_ln:
+            self.transformer.wte = nn.Sequential(
+                self.transformer.wte, nn.LayerNorm(self.hidden_dim, bias=ln_bias)
+            )
 
         self.lm_head = nn.Linear(self.hidden_dim, self.vocab_size, bias=False)
 
