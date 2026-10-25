@@ -1,0 +1,13 @@
+train:
+  _target_: src.datasets.ShakespeareDataset
+  data_dir: ${data_dir}
+  split: train
+  block_size: ${model.block_size}
+  tokenizer_name: ${tokenizer_name}
+val:
+  _target_: src.datasets.ShakespeareDataset
+  data_dir: ${data_dir}
+  split: val
+  block_size: ${model.block_size}
+  tokenizer_name: ${tokenizer_name}
+  stride: ${model.block_size}

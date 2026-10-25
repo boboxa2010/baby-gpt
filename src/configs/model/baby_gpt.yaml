@@ -1,0 +1,13 @@
+_target_: src.model.GPT
+n_layers: 6
+vocab_size: null
+block_size: 256
+hidden_dim: 384
+num_heads: 6
+attn_bias: true
+ln_bias: true
+emb_dropout: 0.1
+attn_dropout: 0.1
+resid_dropout: 0.1
+mlp_expansion_factor: 4
+mlp_dropout: 0.1

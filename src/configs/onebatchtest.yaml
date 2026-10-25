@@ -1,0 +1,16 @@
+defaults:
+  - train
+  - override datasets: onebatchtest
+  - _self_
+train_samples_per_epoch: null
+dataloader:
+  batch_size: 4
+optimizer:
+  lr: 1e-3
+  weight_decay: 0.0
+lr_scheduler:
+  max_lr: 1e-3
+trainer:
+  n_epochs: 5
+  epoch_len: 100
+  log_step: 20

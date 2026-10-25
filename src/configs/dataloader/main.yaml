@@ -1,0 +1,3 @@
+_target_: torch.utils.data.DataLoader
+batch_size: 32
+num_workers: 0
