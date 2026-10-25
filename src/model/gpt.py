@@ -212,7 +212,8 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(self.hidden_dim, self.vocab_size, bias=False)
 
         # https://paperswithcode.com/method/weight-tying
-        self.transformer.wte.weight = self.lm_head.weight
+        embedding = self.transformer.wte[0] if token_emb_ln else self.transformer.wte
+        self.lm_head.weight = embedding.weight
 
         self.apply(self._init_weights)
 
