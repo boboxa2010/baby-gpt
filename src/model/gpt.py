@@ -6,14 +6,16 @@ import torch.nn.functional as F
 
 
 class MLP(nn.Module):
-    def __init__(self, hidden_dim: int, expansion_factor: int, dropout: float):
+    def __init__(
+        self, hidden_dim: int, expansion_factor: int, dropout: float, bias: bool = True
+    ):
         super().__init__()
 
         self.hidden_dim = hidden_dim
         self.expansion_factor = expansion_factor
 
-        self.expand = nn.Linear(hidden_dim, expansion_factor * hidden_dim)
-        self.project = nn.Linear(expansion_factor * hidden_dim, hidden_dim)
+        self.expand = nn.Linear(hidden_dim, expansion_factor * hidden_dim, bias=bias)
+        self.project = nn.Linear(expansion_factor * hidden_dim, hidden_dim, bias=bias)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -45,6 +47,7 @@ class CausalSelfAttention(nn.Module):
         attn_dropout: float,
         resid_dropout: float,
         use_xsa: bool = False,
+        use_rope: bool = False,
     ):
         super().__init__()
 
@@ -62,6 +65,7 @@ class CausalSelfAttention(nn.Module):
         self.resid_dropout = nn.Dropout(resid_dropout)
 
         self.use_xsa = use_xsa
+        self.rope = RoPE(self.head_dim) if use_rope else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -87,6 +91,10 @@ class CausalSelfAttention(nn.Module):
         v = v.view(x.shape[0], x.shape[1], self.num_heads, self.head_dim).transpose(
             1, 2
         )
+
+        if self.rope is not None:
+            q = self.rope(q)
+            k = self.rope(k)
 
         out = F.scaled_dot_product_attention(
             q,
@@ -120,6 +128,8 @@ class GPTBlock(nn.Module):
         mlp_expansion_factor: int,
         mlp_dropout: float,
         use_xsa: bool = False,
+        use_rope: bool = False,
+        mlp_bias: bool = True,
     ):
         super().__init__()
 
@@ -133,9 +143,10 @@ class GPTBlock(nn.Module):
             attn_dropout,
             resid_dropout,
             use_xsa=use_xsa,
+            use_rope=use_rope,
         )
         self.ln2 = nn.LayerNorm(hidden_dim, bias=ln_bias)
-        self.mlp = MLP(hidden_dim, mlp_expansion_factor, mlp_dropout)
+        self.mlp = MLP(hidden_dim, mlp_expansion_factor, mlp_dropout, bias=mlp_bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -154,6 +165,45 @@ class GPTBlock(nn.Module):
         return x
 
 
+class RoPE(nn.Module):
+    """
+    https://wangkuiyi.github.io/rope.html
+    """
+
+    def __init__(self, hidden_dim: int, base: float = 10000):
+        super().__init__()
+
+        assert hidden_dim % 2 == 0, "RoPE requires an even head dimension"
+        self.hidden_dim = hidden_dim
+
+        theta = 1.0 / (base ** (torch.arange(0, hidden_dim, 2).float() / hidden_dim))
+        self.register_buffer("theta", theta)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            Tensor: (..., seq_len, hidden_dim)
+
+        Returns:
+            Tensor: (..., seq_len, hidden_dim)
+        """
+        assert x.dim() in (3, 4), "Input should be 3d or 4d tensor"
+        assert x.shape[-1] == self.hidden_dim, "Shapes mismatch"
+
+        seq_len = x.shape[-2]
+        t = torch.arange(seq_len, device=x.device).type_as(self.theta)
+        theta = torch.einsum("i , j -> i j", t, self.theta)
+
+        emb = torch.cat((theta, theta), dim=-1)
+        sin = torch.sin(emb).to(x.dtype)
+        cos = torch.cos(emb).to(x.dtype)
+
+        xu, xd = x[..., : self.hidden_dim // 2], x[..., self.hidden_dim // 2 :]
+        hatx = torch.cat((-xd, xu), dim=-1)
+
+        return x * cos + hatx * sin
+
+
 class GPT(nn.Module):
     def __init__(
         self,
@@ -170,7 +220,9 @@ class GPT(nn.Module):
         mlp_expansion_factor: int,
         mlp_dropout: float,
         token_emb_ln: bool = False,
+        use_rope: bool = False,
         use_xsa: bool = False,
+        mlp_bias: bool = True,
     ):
         super().__init__()
 
@@ -182,7 +234,11 @@ class GPT(nn.Module):
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(self.vocab_size, self.hidden_dim),
-                wpe=nn.Embedding(self.block_size, self.hidden_dim),
+                wpe=(
+                    nn.Embedding(self.block_size, self.hidden_dim)
+                    if not use_rope
+                    else None
+                ),
                 drop=nn.Dropout(emb_dropout),
                 h=nn.ModuleList(
                     [
@@ -196,6 +252,8 @@ class GPT(nn.Module):
                             mlp_expansion_factor,
                             mlp_dropout,
                             use_xsa=use_xsa,
+                            use_rope=use_rope,
+                            mlp_bias=mlp_bias,
                         )
                         for _ in range(n_layers)
                     ]
@@ -239,10 +297,12 @@ class GPT(nn.Module):
 
         token_embs = self.transformer.wte(input_ids)
 
-        pos = torch.arange(0, S, dtype=torch.long, device=input_ids.device)
-        pos_embs = self.transformer.wpe(pos)
+        if self.transformer.wpe is not None:
+            pos = torch.arange(0, S, dtype=torch.long, device=input_ids.device)
+            pos_embs = self.transformer.wpe(pos)
+            token_embs = token_embs + pos_embs
 
-        x = self.transformer.drop(token_embs + pos_embs)
+        x = self.transformer.drop(token_embs)
 
         for layer in self.transformer.h:
             x = layer(x)
