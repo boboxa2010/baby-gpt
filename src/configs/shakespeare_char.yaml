@@ -27,9 +27,6 @@ model:
   use_rope: false
   use_xsa: false
 
-dataloader:
-  batch_size: 64
-
 optimizer:
   _target_: torch.optim.AdamW
   _convert_: all
@@ -65,8 +62,3 @@ trainer:
   early_stop: ${trainer.n_epochs}
   save_dir: saved
   seed: 1337
-
-writer:
-  project_name: shakespeare-char
-  run_name: shakespeare-char-sa
-  mode: disabled

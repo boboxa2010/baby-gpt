@@ -28,6 +28,3 @@ trainer:
   n_epochs: 8
   epoch_len: 250
   log_step: 1
-
-writer:
-  run_name: shakespeare-char-small-sa
