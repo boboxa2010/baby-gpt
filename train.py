@@ -50,6 +50,15 @@ def main(config):
 
     # build optimizer, learning rate scheduler
     trainable_params = filter(lambda p: p.requires_grad, model.parameters())
+    if config.get("exclude_1d_from_weight_decay", False):
+        trainable_params = list(trainable_params)
+        trainable_params = [
+            {"params": [p for p in trainable_params if p.dim() >= 2]},
+            {
+                "params": [p for p in trainable_params if p.dim() < 2],
+                "weight_decay": 0.0,
+            },
+        ]
     optimizer = instantiate(config.optimizer, params=trainable_params)
     lr_scheduler = instantiate(config.lr_scheduler, optimizer=optimizer)
 
