@@ -1,0 +1,72 @@
+defaults:
+  - model: baby_gpt
+  - writer: wandb
+  - metrics: train
+  - datasets: train
+  - dataloader: main
+  - _self_
+
+data_dir: ${hydra:runtime.cwd}/data/shakespeare
+tokenizer_name: char
+train_samples_per_epoch: 16000
+exclude_1d_from_weight_decay: true
+
+model:
+  n_layers: 6
+  block_size: 256
+  hidden_dim: 384
+  num_heads: 6
+  attn_bias: false
+  ln_bias: false
+  mlp_bias: false
+  emb_dropout: 0.2
+  attn_dropout: 0.2
+  resid_dropout: 0.2
+  mlp_dropout: 0.2
+  token_emb_ln: false
+  use_rope: false
+  use_xsa: false
+
+dataloader:
+  batch_size: 64
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _convert_: all
+  lr: 1e-3
+  betas: [0.9, 0.99]
+  weight_decay: 0.1
+
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.OneCycleLR
+  max_lr: ${optimizer.lr}
+  pct_start: 0.02
+  steps_per_epoch: ${trainer.epoch_len}
+  epochs: ${trainer.n_epochs}
+  anneal_strategy: cos
+  div_factor: 100
+  final_div_factor: 0.1
+  cycle_momentum: false
+
+loss_function:
+  _target_: src.loss.CrossEntropyLoss
+
+trainer:
+  log_step: 10
+  n_epochs: 20
+  epoch_len: 250
+  max_grad_norm: 1.0
+  device_tensors: ["input_ids", "labels"]
+  resume_from: null
+  device: mps
+  override: false
+  monitor: "min val_loss"
+  save_period: 5
+  early_stop: ${trainer.n_epochs}
+  save_dir: saved
+  seed: 1337
+
+writer:
+  project_name: shakespeare-char
+  run_name: shakespeare-char-sa
+  mode: disabled
